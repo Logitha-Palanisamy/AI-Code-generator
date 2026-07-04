@@ -1,0 +1,67 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply font-sans bg-slate-50 text-slate-900 transition-colors duration-200 antialiased;
+  }
+
+  body.dark {
+    @apply bg-[#070b19] text-slate-100;
+  }
+}
+
+/* Custom premium scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-300 rounded-full;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  @apply bg-slate-800;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-slate-400;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  @apply bg-slate-700;
+}
+
+/* Glassmorphism custom classes */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+.dark .glass-panel {
+  background: rgba(17, 30, 63, 0.65);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(30, 45, 90, 0.5);
+}
+
+/* Premium Gradients */
+.bg-premium-gradient {
+  background: radial-gradient(circle at top right, rgba(14, 144, 235, 0.08), transparent 40%),
+              radial-gradient(circle at bottom left, rgba(2, 114, 202, 0.05), transparent 40%);
+}
+
+.dark .bg-premium-gradient {
+  background: radial-gradient(circle at top right, rgba(14, 144, 235, 0.15), transparent 40%),
+              radial-gradient(circle at bottom left, rgba(2, 114, 202, 0.08), transparent 45%);
+}
