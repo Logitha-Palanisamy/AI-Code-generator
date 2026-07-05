@@ -1,14 +1,23 @@
 import React, { useState } from "react";
-import { generateCode, refineCode, type CodeGenerationRequest, type CodeGenerationResponse } from "../api/code_generation";
-import { Loader, AlertCircle, CheckCircle, Copy, Check } from "lucide-react";
+import {
+  generateCode,
+  refineCode,
+  type CodeGenerationRequest,
+  type CodeGenerationResponse,
+} from "../api/code_generation";
 
+import { Loader, AlertCircle, Copy, Check } from "lucide-react";
 interface CodeGeneratorFormProps {
-  onCodeGenerated?: (request: CodeGenerationRequest, result: CodeGenerationResponse) => void;
+  onCodeGenerated?: (
+    request: CodeGenerationRequest,
+    result: CodeGenerationResponse
+  ) => void;
   initialResult?: CodeGenerationResponse | null;
   initialDescription?: string;
   initialLanguage?: string;
   initialFramework?: string;
 }
+
 
 const LANGUAGES = [
   "Python",
@@ -45,7 +54,7 @@ export const CodeGeneratorForm: React.FC<CodeGeneratorFormProps> = ({
   const [framework, setFramework] = useState<string>(initialFramework || "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<CodeGenerationResponse | null>(null);
+  const [result, setResult] =useState<CodeGenerationResponse | null>(initialResult ?? null);
   const [copied, setCopied] = useState(false);
   const [refineFeedback, setRefineFeedback] = useState("");
   const [refining, setRefining] = useState(false);
