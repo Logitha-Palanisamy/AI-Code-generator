@@ -6,7 +6,7 @@ import { Folder, FolderOpen, FileCode, Download, ChevronRight, ChevronDown, Aler
 
 interface FileNode {
   name: string;
-  type: "file" | "folder";
+  type: string;
   content?: string;
   children?: FileNode[];
 }
@@ -44,6 +44,8 @@ export const ProjectGeneratorPage: React.FC = () => {
         const tree = artifacts.map((file) => ({ name: file.filename, type: "file", content: file.content }));
   
       
+setFileTree(tree);
+setSelectedFile(tree[0]);
         return;
       }
     } catch (err) {
@@ -205,6 +207,24 @@ class WeatherScraper:
         setSelectedProjectId={setSelectedProjectId}
         onProjectSelect={handleProjectSelect}
       />
+
+      {project && (
+        <div className="glass-panel p-5 rounded-xl shadow-premium mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <p className="text-[11px] uppercase tracking-wider text-slate-400">Active Project</p>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white">#{project.id} • {project.target_language}</h2>
+            </div>
+            <div className="text-[12px] text-slate-500 dark:text-slate-400">
+              Status: <span className="font-semibold text-slate-900 dark:text-white">{project.status}</span>
+            </div>
+          </div>
+          <div className="mt-4 text-sm text-slate-600 dark:text-slate-300">
+            <p className="font-semibold mb-2">Project Description</p>
+            <p className="whitespace-pre-wrap">{project.requirement_text}</p>
+          </div>
+        </div>
+      )}
 
       {!project ? (
         <div className="glass-panel p-12 text-center rounded-xl shadow-premium">

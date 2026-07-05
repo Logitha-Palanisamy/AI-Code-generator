@@ -4,7 +4,7 @@ import { createProject, getProjectArtifacts, getProjectDetails, saveProjectArtif
 import { ProjectHeader } from "../components/ProjectHeader";
 import { CodeGeneratorForm } from "../components/CodeGeneratorForm";
 import type { Project } from "../api/projects";
-
+import type { CodeGenerationResponse } from "../api/code_generation";
 import { FileCode, AlertCircle, Copy, Check } from "lucide-react";
 
 const CODE_GENERATOR_CACHE_KEY = "code_generator_cache";
