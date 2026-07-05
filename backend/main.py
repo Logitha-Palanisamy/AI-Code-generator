@@ -14,16 +14,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os
 
-app = FastAPI()
-
-frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
-
-app.mount("/assets", StaticFiles(directory=os.path.join(frontend_path, "assets")), name="assets")
-
-@app.get("/{full_path:path}")
-async def serve_frontend(full_path: str):
-    index_file = os.path.join(frontend_path, "index.html")
-    return FileResponse(index_file)
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    lifespan=lifespan
+)
 # Import all models to ensure they register on the Base class metadata
 from backend.models.user import User
 from backend.models.project import Project
