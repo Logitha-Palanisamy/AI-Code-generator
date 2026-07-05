@@ -42,8 +42,8 @@ export const ProjectGeneratorPage: React.FC = () => {
       const artifacts = await getProjectArtifacts(proj.id);
       if (artifacts && artifacts.length > 0) {
         const tree = artifacts.map((file) => ({ name: file.filename, type: "file", content: file.content }));
-        setFileTree(tree);
-        setSelectedFile(tree[0]);
+  
+      
         return;
       }
     } catch (err) {

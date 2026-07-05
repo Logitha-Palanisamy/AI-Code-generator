@@ -19,7 +19,7 @@ const scanReviewFindings = (filename: string, code: string): AuditFinding[] => {
 
   lines.forEach((line, index) => {
     const lineNumber = index + 1;
-    const trimmed = line.trim();
+  
 
     if (/requests\.get\([^)]*\)/.test(line) && !/timeout\s*=/.test(line)) {
       findings.push({
