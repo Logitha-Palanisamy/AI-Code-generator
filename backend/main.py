@@ -9,7 +9,21 @@ from backend.websocket import routes as ws_routes
 from backend.websocket.manager import redis_pubsub_listener
 from backend.db.base import Base
 from backend.db.session import engine
+from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+import os
 
+app = FastAPI()
+
+frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+
+app.mount("/assets", StaticFiles(directory=os.path.join(frontend_path, "assets")), name="assets")
+
+@app.get("/{full_path:path}")
+async def serve_frontend(full_path: str):
+    index_file = os.path.join(frontend_path, "index.html")
+    return FileResponse(index_file)
 # Import all models to ensure they register on the Base class metadata
 from backend.models.user import User
 from backend.models.project import Project
