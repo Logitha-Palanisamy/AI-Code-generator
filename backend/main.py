@@ -26,6 +26,7 @@ from backend.routers import (
     setting,
     admin,
     dashboard,
+    code_generation,
 )
 
 from backend.websocket import routes as ws_routes
@@ -76,6 +77,7 @@ app.include_router(project.router, prefix=settings.API_V1_STR)
 app.include_router(setting.router, prefix=settings.API_V1_STR)
 app.include_router(admin.router, prefix=settings.API_V1_STR)
 app.include_router(dashboard.router, prefix=settings.API_V1_STR)
+app.include_router(code_generation.router, prefix=settings.API_V1_STR)
 app.include_router(ws_routes.router)
 
 # ======================================================

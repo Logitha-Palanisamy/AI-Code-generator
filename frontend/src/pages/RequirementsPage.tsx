@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { createProject } from "../api/projects";
+import { createProject, getProjectDetails } from "../api/projects";
 import type { Project } from "../api/projects";
 import { Play, Sparkles, Terminal, Layers, ArrowRight } from "lucide-react";
 import { getAccessToken } from "../api/client";
@@ -10,10 +10,11 @@ export const RequirementsPage: React.FC = () => {
   const [targetLanguage, setTargetLanguage] = useState("Python");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [, setActiveProject] = useState<Project | null>(null);
+  const [activeProject, setActiveProject] = useState<Project | null>(null);
   
   const [wsLogs, setWsLogs] = useState<Array<{ stage: string; message: string; timestamp: string; isError?: boolean }>>([]);
   const [currentStage, setCurrentStage] = useState<string>("INIT");
+  const [socketConnected, setSocketConnected] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
 
   // Suggested Prompts
@@ -44,17 +45,15 @@ export const RequirementsPage: React.FC = () => {
     try {
       const project = await createProject(trimmedRequirement, targetLanguage);
       setActiveProject(project);
-      // Persist selected project id so CodeGeneratorPage will pick it up
       try {
         localStorage.setItem("selected_project_id", String(project.id));
       } catch {}
-      // Navigate to the code generator so user can inspect generated artifacts
-      navigate("/code-generator");
+      // Keep the user on requirements page but show pipeline status and active project
       setWsLogs((prev) => [
         ...prev,
         {
           stage: "INIT",
-          message: `Starting ${targetLanguage} generation pipeline for: ${trimmedRequirement}`,
+          message: `Started pipeline for project #${project.id}.`,
           timestamp: new Date().toISOString(),
         },
       ]);
@@ -84,6 +83,7 @@ export const RequirementsPage: React.FC = () => {
 
     socket.onopen = () => {
       console.log("WebSocket connected for project", projectId);
+      setSocketConnected(true);
       setWsLogs((prev) => [
         ...prev,
         { stage: "INIT", message: "WebSocket connection established. Waiting for pipeline...", timestamp: new Date().toISOString() }
@@ -126,6 +126,7 @@ export const RequirementsPage: React.FC = () => {
 
     socket.onerror = (err) => {
       console.error("WebSocket error", err);
+      setSocketConnected(false);
       setWsLogs((prev) => [
         ...prev,
         { stage: "ERROR", message: "WebSocket pipeline sync encountered connection issues.", timestamp: new Date().toISOString(), isError: true }
@@ -134,16 +135,41 @@ export const RequirementsPage: React.FC = () => {
 
     socket.onclose = () => {
       console.log("WebSocket closed for project", projectId);
+      setSocketConnected(false);
     };
   };
 
   useEffect(() => {
+    const storedProject = localStorage.getItem("selected_project_id");
+    if (storedProject) {
+      getProjectDetails(Number(storedProject))
+        .then((project) => {
+          setActiveProject(project);
+          setCurrentStage(project.status || "INIT");
+        })
+        .catch(() => setActiveProject(null));
+    }
+
     return () => {
       if (socketRef.current) {
         socketRef.current.close();
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!activeProject?.id) {
+      return;
+    }
+
+    connectWebSocket(activeProject.id);
+
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.close();
+      }
+    };
+  }, [activeProject?.id]);
 
   const pipelineStages = [
     { key: "INIT", label: "Initialize" },
@@ -261,6 +287,45 @@ export const RequirementsPage: React.FC = () => {
                     <ArrowRight size={12} className="text-slate-400 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
                   </button>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {activeProject && (
+            <div className="glass-panel p-6 rounded-xl shadow-premium space-y-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-[11px] uppercase tracking-widest text-slate-400">Active Project</p>
+                  <h4 className="text-lg font-semibold text-slate-900 dark:text-white">#{activeProject.id} • {activeProject.target_language}</h4>
+                </div>
+                <div className="flex flex-wrap gap-2 items-center">
+                  <span className={`text-[11px] rounded-full px-3 py-1 border ${socketConnected ? "border-emerald-300 bg-emerald-500/10 text-emerald-700" : "border-slate-300 bg-slate-100 text-slate-500"}`}>
+                    {socketConnected ? "Live pipeline connected" : "Pipeline disconnected"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => navigate("/code-generator")}
+                    className="rounded-lg bg-brand-600 text-white px-4 py-2 text-xs font-semibold transition hover:bg-brand-700"
+                  >
+                    View Artifacts
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 text-[12px] text-slate-500 dark:text-slate-400">
+                <div className="rounded-xl bg-slate-50 dark:bg-slate-950/80 p-3">
+                  <div className="text-[10px] uppercase tracking-wider text-slate-400">Status</div>
+                  <div className="mt-1 font-semibold text-slate-800 dark:text-white">{activeProject.status || "Pending"}</div>
+                </div>
+                <div className="rounded-xl bg-slate-50 dark:bg-slate-950/80 p-3">
+                  <div className="text-[10px] uppercase tracking-wider text-slate-400">Created</div>
+                  <div className="mt-1 font-semibold text-slate-800 dark:text-white">{new Date(activeProject.created_at).toLocaleDateString()}</div>
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-slate-50 dark:bg-slate-950/80 p-3 text-[12px] text-slate-600 dark:text-slate-300">
+                <div className="font-semibold text-slate-700 dark:text-white mb-1">Requirement summary</div>
+                <p className="line-clamp-3">{activeProject.requirement_text}</p>
               </div>
             </div>
           )}

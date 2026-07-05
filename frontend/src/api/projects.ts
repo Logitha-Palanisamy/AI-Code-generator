@@ -102,6 +102,18 @@ export const rebuildProject = async (id: number) => {
   return res.data;
 };
 
+export const saveProjectArtifact = async (
+  projectId: number,
+  filename: string,
+  content: string
+) => {
+  const res = await client.post<{ success: boolean; filename: string }>(
+    `/projects/${projectId}/artifacts`,
+    { filename, content }
+  );
+  return res.data;
+};
+
 // Settings APIs
 export const getSettings = async () => {
   const res = await client.get<Setting>("/settings");

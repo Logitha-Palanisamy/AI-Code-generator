@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { ProjectHeader } from "../components/ProjectHeader";
+import { getProjectArtifacts } from "../api/projects";
 import type { Project } from "../api/projects";
 import { Folder, FolderOpen, FileCode, Download, ChevronRight, ChevronDown, AlertCircle } from "lucide-react";
 
@@ -29,7 +30,7 @@ export const ProjectGeneratorPage: React.FC = () => {
     }
   }, [selectedProjectId]);
 
-  const handleProjectSelect = (proj: Project | null) => {
+  const handleProjectSelect = async (proj: Project | null) => {
     setProject(proj);
     if (!proj) {
       setFileTree([]);
@@ -37,10 +38,22 @@ export const ProjectGeneratorPage: React.FC = () => {
       return;
     }
 
+    try {
+      const artifacts = await getProjectArtifacts(proj.id);
+      if (artifacts && artifacts.length > 0) {
+        const tree = artifacts.map((file) => ({ name: file.filename, type: "file", content: file.content }));
+        setFileTree(tree);
+        setSelectedFile(tree[0]);
+        return;
+      }
+    } catch (err) {
+      console.error("Failed to load project artifacts", err);
+    }
+
     const lang = proj.target_language || "Python";
     const reqText = proj.requirement_text.toLowerCase();
 
-    // Dynamically build a directory tree structure
+    // Fallback dynamic placeholder tree when no artifacts exist yet
     let tree: FileNode[] = [];
     if (lang === "Python") {
       if (reqText.includes("scraper") || reqText.includes("weather")) {
@@ -62,13 +75,13 @@ class WeatherScraper:
     
     def scrape(self):
         r = requests.get(self.url)
-        return r.text`
+        return r.text`,
               },
-              { name: "utils.py", type: "file", content: "def format_temp(val):\n    return f'{val}°C'" }
-            ]
+              { name: "utils.py", type: "file", content: "def format_temp(val):\n    return f'{val}°C'" },
+            ],
           },
           { name: "requirements.txt", type: "file", content: "requests>=2.31.0\nbeautifulsoup4>=4.12.3" },
-          { name: "README.md", type: "file", content: "# Weather Scraper\nRun with `python src/scraper.py`." }
+          { name: "README.md", type: "file", content: "# Weather Scraper\nRun with `python src/scraper.py`." },
         ];
       } else {
         tree = [
@@ -78,32 +91,30 @@ class WeatherScraper:
             children: [
               { name: "__init__.py", type: "file", content: "" },
               { name: "main.py", type: "file", content: "def main():\n    print('Hello World!')" },
-              { name: "config.py", type: "file", content: "DB_PATH = 'app.db'" }
-            ]
+              { name: "config.py", type: "file", content: "DB_PATH = 'app.db'" },
+            ],
           },
           { name: "requirements.txt", type: "file", content: "sqlite3" },
-          { name: "README.md", type: "file", content: "# Main Application\nCompile and run python code." }
+          { name: "README.md", type: "file", content: "# Main Application\nCompile and run python code." },
         ];
       }
     } else {
-      // TypeScript/Go generic
       tree = [
         {
           name: "src",
           type: "folder",
           children: [
             { name: "main.ts", type: "file", content: "console.log('Task initialized');" },
-            { name: "config.ts", type: "file", content: "export const port = 3000;" }
-          ]
+            { name: "config.ts", type: "file", content: "export const port = 3000;" },
+          ],
         },
         { name: "package.json", type: "file", content: '{\n  "dependencies": {}\n}' },
-        { name: "tsconfig.json", type: "file", content: "{\n  \"compilerOptions\": {}\n}" }
+        { name: "tsconfig.json", type: "file", content: "{\n  \"compilerOptions\": {}\n}" },
       ];
     }
 
     setFileTree(tree);
-    
-    // Auto-select first file
+
     const findFirstFile = (nodes: FileNode[]): FileNode | null => {
       for (const n of nodes) {
         if (n.type === "file") return n;

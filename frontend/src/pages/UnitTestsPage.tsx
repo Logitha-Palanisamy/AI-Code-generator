@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { ProjectHeader } from "../components/ProjectHeader";
+import { getProjectArtifacts } from "../api/projects";
 import type { Project } from "../api/projects";
 import { Beaker, RefreshCw } from "lucide-react";
 
@@ -27,6 +28,27 @@ export const UnitTestsPage: React.FC = () => {
     setHealingStage("idle");
     setTestLog([]);
     setIsLooping(false);
+
+    if (!proj) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        const artifacts = await getProjectArtifacts(proj.id);
+        if (artifacts && artifacts.length > 0) {
+          const mainTest = artifacts.find((a) => a.filename.includes("test"));
+          if (mainTest) {
+            setTestLog([
+              `Loaded test artifact: ${mainTest.filename}`,
+              "-- Test suite ready for execution --",
+            ]);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load artifacts for unit tests page", err);
+      }
+    })();
   };
 
   const startHealingLoop = () => {

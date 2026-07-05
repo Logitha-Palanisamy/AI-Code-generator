@@ -152,6 +152,35 @@ def rebuild_project(
     return project
 
 
+@router.post("/{project_id}/artifacts", status_code=status.HTTP_201_CREATED)
+def save_project_artifact(
+    project_id: int,
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Save a generated artifact file for the requested project."""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    if project.user_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    project_dir = Path(__file__).resolve().parent.parent.parent / "generated_projects" / str(project_id)
+    project_dir.mkdir(parents=True, exist_ok=True)
+
+    filename = payload.get("filename")
+    content = payload.get("content", "")
+    if not filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Filename is required")
+
+    file_path = project_dir / filename
+    file_path.write_text(content, encoding="utf-8")
+
+    return {"success": True, "filename": filename}
+
+
 @router.get("/{project_id}/artifacts")
 def get_project_artifacts(
     project_id: int,

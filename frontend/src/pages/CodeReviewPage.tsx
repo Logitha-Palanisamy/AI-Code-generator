@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { ProjectHeader } from "../components/ProjectHeader";
+import { getProjectArtifacts } from "../api/projects";
 import type { Project } from "../api/projects";
 import { AlertTriangle, Eye, AlertCircle } from "lucide-react";
 
@@ -11,6 +12,106 @@ interface AuditFinding {
   description: string;
   suggestion: string;
 }
+
+const scanReviewFindings = (filename: string, code: string): AuditFinding[] => {
+  const lines = code.split("\n");
+  const findings: AuditFinding[] = [];
+
+  lines.forEach((line, index) => {
+    const lineNumber = index + 1;
+    const trimmed = line.trim();
+
+    if (/requests\.get\([^)]*\)/.test(line) && !/timeout\s*=/.test(line)) {
+      findings.push({
+        line: lineNumber,
+        severity: "medium",
+        category: "Performance",
+        issue: "Missing request timeout",
+        description: "Network requests without a timeout may hang indefinitely when the remote service is slow or unavailable.",
+        suggestion: "Add a timeout argument to requests.get, e.g. requests.get(url, timeout=10).",
+      });
+    }
+
+    if (/axios\./.test(line) && !/timeout\s*:/.test(line)) {
+      findings.push({
+        line: lineNumber,
+        severity: "medium",
+        category: "Performance",
+        issue: "Missing axios timeout",
+        description: "Axios calls without timeout configuration can wait forever on unresponsive endpoints.",
+        suggestion: "Add timeout: 10000 to the Axios request config.",
+      });
+    }
+
+    if (/\bexcept\s*:\b/.test(line)) {
+      findings.push({
+        line: lineNumber,
+        severity: "low",
+        category: "Quality",
+        issue: "Bare exception clause",
+        description: "Catching all exceptions hides the real error and makes debugging difficult.",
+        suggestion: "Catch a specific exception type and preserve the error message.",
+      });
+    }
+
+    if (/\beval\(/.test(line) || /\bexec\(/.test(line)) {
+      findings.push({
+        line: lineNumber,
+        severity: "high",
+        category: "Security",
+        issue: "Use of eval/exec",
+        description: "Using eval or exec on dynamic strings is a serious security risk and can execute attacker-controlled code.",
+        suggestion: "Avoid eval/exec. Use safer parsing or direct function calls instead.",
+      });
+    }
+
+    if (/execute\([^)]*\)/.test(line) && /f[`"']/.test(line)) {
+      findings.push({
+        line: lineNumber,
+        severity: "high",
+        category: "Security",
+        issue: "Potential SQL injection",
+        description: "Interpolating variables into SQL queries may allow injection attacks if input is not sanitized.",
+        suggestion: "Use parameterized SQL queries or query builder functions.",
+      });
+    }
+
+    if (/console\.log\(/.test(line) && !/console\.log\(.*debug/.test(line)) {
+      findings.push({
+        line: lineNumber,
+        severity: "low",
+        category: "Quality",
+        issue: "Console logging in production code",
+        description: "Debug logging should be removed or replaced with a configurable logger for production readiness.",
+        suggestion: "Use a structured logger and control output with log levels.",
+      });
+    }
+
+    if (/TODO|FIXME/.test(line)) {
+      findings.push({
+        line: lineNumber,
+        severity: "info",
+        category: "Quality",
+        issue: "TODO comment found",
+        description: "Comments marking incomplete implementation or future work should be addressed before release.",
+        suggestion: "Resolve the TODO or create a tracked issue with full context.",
+      });
+    }
+
+    if (/\bany\b/.test(line) && /typescript|tsx|ts/.test(filename)) {
+      findings.push({
+        line: lineNumber,
+        severity: "medium",
+        category: "Quality",
+        issue: "Loose any type",
+        description: "Using the any type removes TypeScript's compile-time safety.",
+        suggestion: "Use a more specific type or a generic constraint instead of any.",
+      });
+    }
+  });
+
+  return findings;
+};
 
 const mockAuditsByLanguageAndType: Record<string, Record<string, { filename: string; code: string; findings: AuditFinding[] }[]>> = {
   Python: {
@@ -120,6 +221,7 @@ export const CodeReviewPage: React.FC = () => {
   const [auditFiles, setAuditFiles] = useState<{ filename: string; code: string; findings: AuditFinding[] }[]>([]);
   const [selectedFile, setSelectedFile] = useState<{ filename: string; code: string; findings: AuditFinding[] } | null>(null);
   const [selectedFinding, setSelectedFinding] = useState<AuditFinding | null>(null);
+  const [reviewSummary, setReviewSummary] = useState<string | null>(null);
 
   useEffect(() => {
     if (selectedProjectId) {
@@ -131,6 +233,7 @@ export const CodeReviewPage: React.FC = () => {
 
   const handleProjectSelect = (proj: Project | null) => {
     setProject(proj);
+    setReviewSummary(null);
     if (!proj) {
       setAuditFiles([]);
       setSelectedFile(null);
@@ -138,29 +241,66 @@ export const CodeReviewPage: React.FC = () => {
       return;
     }
 
-    const lang = proj.target_language || "Python";
-    const reqText = proj.requirement_text.toLowerCase();
+    setReviewSummary("Reviewing selected project code...");
+    void (async () => {
+      try {
+        const artifacts = await getProjectArtifacts(proj.id);
+        if (artifacts && artifacts.length > 0) {
+          const files = artifacts.map((artifact) => {
+            const findings = scanReviewFindings(artifact.filename, artifact.content);
+            return {
+              filename: artifact.filename,
+              code: artifact.content,
+              findings,
+            };
+          });
 
-    let templateCategory = "general";
-    if (reqText.includes("scraper") || reqText.includes("weather")) {
-      templateCategory = "scraper";
-    } else if (reqText.includes("task") || reqText.includes("cli") || reqText.includes("manager")) {
-      templateCategory = "task";
-    }
+          setAuditFiles(files);
+          setReviewSummary(
+            files.length > 0
+              ? `Scanned ${files.length} file${files.length === 1 ? "" : "s"} and detected ${files.reduce((sum, f) => sum + f.findings.length, 0)} review flags.`
+              : "No review flags were detected for this project."
+          );
 
-    const langAudits = mockAuditsByLanguageAndType[lang] || mockAuditsByLanguageAndType["Python"];
-    const files = langAudits[templateCategory] || langAudits["general"] || [];
-
-    setAuditFiles(files);
-    if (files.length > 0) {
-      setSelectedFile(files[0]);
-      if (files[0].findings.length > 0) {
-        setSelectedFinding(files[0].findings[0]);
+          if (files.length > 0) {
+            setSelectedFile(files[0]);
+            setSelectedFinding(files[0].findings[0] || null);
+          }
+          return;
+        }
+      } catch (err) {
+        console.error("Failed to load project artifacts for code review", err);
       }
-    } else {
-      setSelectedFile(null);
-      setSelectedFinding(null);
-    }
+
+      const lang = proj.target_language || "Python";
+      const reqText = proj.requirement_text.toLowerCase();
+
+      let templateCategory = "general";
+      if (reqText.includes("scraper") || reqText.includes("weather")) {
+        templateCategory = "scraper";
+      } else if (reqText.includes("task") || reqText.includes("cli") || reqText.includes("manager")) {
+        templateCategory = "task";
+      }
+
+      const langAudits = mockAuditsByLanguageAndType[lang] || mockAuditsByLanguageAndType["Python"];
+      const files = langAudits[templateCategory] || langAudits["general"] || [];
+
+      setAuditFiles(files);
+      setReviewSummary(
+        files.length > 0
+          ? `Scanned ${files.length} file${files.length === 1 ? "" : "s"} and detected ${files.reduce((sum, f) => sum + f.findings.length, 0)} review issues.`
+          : "No static review issues were found in this generated project."
+      );
+      if (files.length > 0) {
+        setSelectedFile(files[0]);
+        if (files[0].findings.length > 0) {
+          setSelectedFinding(files[0].findings[0]);
+        }
+      } else {
+        setSelectedFile(null);
+        setSelectedFinding(null);
+      }
+    })();
   };
 
   const getSeverityBadge = (sev: string) => {
@@ -208,10 +348,25 @@ export const CodeReviewPage: React.FC = () => {
           <div className="lg:col-span-4 space-y-6">
             {/* File List */}
             <div className="glass-panel p-5 rounded-xl shadow-premium space-y-4">
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center">
-                <Eye size={14} className="mr-1.5 text-brand-500" />
-                Reviewed Files
-              </h3>
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center">
+                    <Eye size={14} className="mr-1.5 text-brand-500" />
+                    Reviewed Files
+                  </h3>
+                  {reviewSummary && (
+                    <span className="text-[10px] rounded-full border border-slate-200/80 bg-slate-50 px-2.5 py-1 text-slate-600 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-300">
+                      {reviewSummary}
+                    </span>
+                  )}
+                </div>
+
+                {reviewSummary && (
+                  <div className="rounded-2xl border border-slate-200/70 dark:border-slate-800/80 bg-slate-50 dark:bg-slate-950/60 p-3 text-[12px] text-slate-600 dark:text-slate-300">
+                    {reviewSummary}
+                  </div>
+                )}
+              </div>
               <div className="space-y-1.5">
                 {auditFiles.map((file) => (
                   <button

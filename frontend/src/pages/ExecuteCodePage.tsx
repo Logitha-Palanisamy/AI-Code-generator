@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { ProjectHeader } from "../components/ProjectHeader";
+import { getProjectArtifacts } from "../api/projects";
 import type { Project } from "../api/projects";
 import { Terminal, Play, AlertCircle } from "lucide-react";
 
@@ -33,10 +34,30 @@ export const ExecuteCodePage: React.FC = () => {
   const handleProjectSelect = (proj: Project | null) => {
     setProject(proj);
     setConsoleLogs([]);
-    if (proj) {
+    if (!proj) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        const artifacts = await getProjectArtifacts(proj.id);
+        if (artifacts && artifacts.length > 0) {
+          const pyFile = artifacts.find((a) => a.filename.endsWith(".py"));
+          const tsFile = artifacts.find((a) => a.filename.endsWith(".ts"));
+          const jsFile = artifacts.find((a) => a.filename.endsWith(".js"));
+          const goFile = artifacts.find((a) => a.filename.endsWith(".go"));
+          setRunFile(
+            pyFile?.filename || tsFile?.filename || jsFile?.filename || goFile?.filename || "main.py"
+          );
+          return;
+        }
+      } catch (err) {
+        console.error("Failed to load artifacts for execution page", err);
+      }
+
       const lang = proj.target_language || "Python";
       setRunFile(lang === "Go" ? "main.go" : lang === "TypeScript" ? "index.ts" : "main.py");
-    }
+    })();
   };
 
   const handleRunCode = () => {

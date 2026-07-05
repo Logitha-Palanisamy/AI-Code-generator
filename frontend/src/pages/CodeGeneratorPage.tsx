@@ -1,9 +1,35 @@
 import React, { useState, useEffect } from "react";
 import { getAccessToken } from "../api/client";
-import { getProjectArtifacts, getProjectDetails } from "../api/projects";
+import { createProject, getProjectArtifacts, getProjectDetails, saveProjectArtifact } from "../api/projects";
 import { ProjectHeader } from "../components/ProjectHeader";
+import { CodeGeneratorForm } from "../components/CodeGeneratorForm";
 import type { Project } from "../api/projects";
+import type { CodeGenerationResponse } from "../api/code_generation";
 import { FileCode, AlertCircle, Copy, Check } from "lucide-react";
+
+const CODE_GENERATOR_CACHE_KEY = "code_generator_cache";
+
+const loadCachedGeneratedFiles = (projectId: number) => {
+  try {
+    const raw = localStorage.getItem(CODE_GENERATOR_CACHE_KEY);
+    if (!raw) return null;
+    const cache = JSON.parse(raw) as Record<string, { filename: string; content: string }[]>;
+    return cache[String(projectId)] || null;
+  } catch {
+    return null;
+  }
+};
+
+const saveCachedGeneratedFiles = (projectId: number, files: { filename: string; content: string }[]) => {
+  try {
+    const raw = localStorage.getItem(CODE_GENERATOR_CACHE_KEY);
+    const cache = raw ? (JSON.parse(raw) as Record<string, { filename: string; content: string }[]>) : {};
+    cache[String(projectId)] = files;
+    localStorage.setItem(CODE_GENERATOR_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // ignore localStorage failures
+  }
+};
 
 // Predefined gorgeous templates for realistic mock files
 const mockFilesByLanguage: Record<string, Record<string, { filename: string; content: string }[]>> = {
@@ -312,6 +338,7 @@ export const CodeGeneratorPage: React.FC = () => {
   const [files, setFiles] = useState<{ filename: string; content: string }[]>([]);
   const [selectedFile, setSelectedFile] = useState<{ filename: string; content: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [projectRefresh, setProjectRefresh] = useState(0);
 
   useEffect(() => {
     if (selectedProjectId) {
@@ -329,6 +356,12 @@ export const CodeGeneratorPage: React.FC = () => {
       return;
     }
 
+    const cachedFiles = loadCachedGeneratedFiles(proj.id);
+    if (cachedFiles && cachedFiles.length > 0) {
+      setFiles(cachedFiles);
+      setSelectedFile(cachedFiles[0]);
+    }
+
     // Try to load real generated artifacts first (if any)
     (async () => {
       try {
@@ -336,6 +369,7 @@ export const CodeGeneratorPage: React.FC = () => {
         if (artifacts && artifacts.length > 0) {
           setFiles(artifacts);
           setSelectedFile(artifacts[0]);
+          saveCachedGeneratedFiles(proj.id, artifacts);
           return;
         }
       } catch (err) {
@@ -357,11 +391,13 @@ export const CodeGeneratorPage: React.FC = () => {
     const langTemplates = mockFilesByLanguage[lang] || mockFilesByLanguage["Python"];
     const fileTemplates = langTemplates[templateCategory] || langTemplates["general"] || [];
 
-    setFiles(fileTemplates);
-    if (fileTemplates.length > 0) {
-      setSelectedFile(fileTemplates[0]);
-    } else {
-      setSelectedFile(null);
+    if (!cachedFiles || cachedFiles.length === 0) {
+      setFiles(fileTemplates);
+      if (fileTemplates.length > 0) {
+        setSelectedFile(fileTemplates[0]);
+      } else {
+        setSelectedFile(null);
+      }
     }
   };
 
@@ -430,6 +466,7 @@ export const CodeGeneratorPage: React.FC = () => {
             if (artifacts && artifacts.length > 0) {
               setFiles(artifacts);
               setSelectedFile(artifacts[0]);
+              saveCachedGeneratedFiles(projectId, artifacts);
             }
           } catch (err) {
             console.error("Failed to fetch project artifacts", err);
@@ -464,36 +501,78 @@ export const CodeGeneratorPage: React.FC = () => {
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
-      <ProjectHeader
-        selectedProjectId={selectedProjectId}
-        setSelectedProjectId={setSelectedProjectId}
-        onProjectSelect={handleProjectSelect}
-      />
+      {/* Code Generator Form - Always Visible */}
+      <div>
+        <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-2">Code Generator</h1>
+        <p className="text-slate-600 dark:text-slate-400 mb-4">
+          Generate production-ready code from natural language descriptions powered by Claude AI
+        </p>
+        <CodeGeneratorForm
+          onCodeGenerated={async (request, result) => {
+            try {
+              const newProject = await createProject(request.description, request.language);
+              setSelectedProjectId(newProject.id);
+              setProject(newProject);
+              setProjectRefresh((prev) => prev + 1);
 
-      {!project ? (
-        <div className="glass-panel p-12 text-center rounded-xl shadow-premium">
-          <AlertCircle size={36} className="mx-auto text-slate-400 mb-3" />
-          <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">No Active Project Selected</h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
-            Create a project or select an existing one using the dropdown to inspect the compiled codebase.
-          </p>
-        </div>
-      ) : isPipelinePending ? (
-        <div className="glass-panel p-12 text-center rounded-xl shadow-premium animate-pulse">
-          <div className="h-8 w-8 rounded-full border-2 border-brand-500 border-t-transparent animate-spin mx-auto mb-4" />
-          <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">Pipeline Execution in Progress</h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Generating code components... Current Stage: <span className="font-bold text-brand-500 uppercase">{project.status}</span>
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* File List / Tabs */}
-          <div className="lg:col-span-1 glass-panel p-5 rounded-xl shadow-premium space-y-4">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center">
-              <FileCode size={14} className="mr-1.5 text-brand-500" />
-              Generated Components
-            </h3>
+              const extMap: Record<string, string> = {
+                Python: "py",
+                JavaScript: "js",
+                TypeScript: "ts",
+                Java: "java",
+                "C#": "cs",
+                Go: "go",
+              };
+
+              const filename = `generated.${extMap[request.language] || "txt"}`;
+              const content = result.code || "";
+              const generatedFiles = [{ filename, content }];
+              setFiles(generatedFiles);
+              setSelectedFile({ filename, content });
+              saveCachedGeneratedFiles(newProject.id, generatedFiles);
+
+              await saveProjectArtifact(newProject.id, filename, content);
+            } catch (err) {
+              console.error("Failed to create project from generated code", err);
+            }
+          }}
+        />
+      </div>
+
+      {/* Project-Based Code Generator */}
+      <div className="border-t border-slate-200 dark:border-slate-800 pt-6">
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">Project Code Generator</h2>
+        <ProjectHeader
+          selectedProjectId={selectedProjectId}
+          setSelectedProjectId={setSelectedProjectId}
+          onProjectSelect={handleProjectSelect}
+          refreshTrigger={projectRefresh}
+        />
+
+        {!project ? (
+          <div className="glass-panel p-12 text-center rounded-xl shadow-premium mt-6">
+            <AlertCircle size={36} className="mx-auto text-slate-400 mb-3" />
+            <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">No Active Project Selected</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
+              Create a project or select an existing one using the dropdown to inspect the compiled codebase.
+            </p>
+          </div>
+        ) : isPipelinePending ? (
+          <div className="glass-panel p-12 text-center rounded-xl shadow-premium animate-pulse mt-6">
+            <div className="h-8 w-8 rounded-full border-2 border-brand-500 border-t-transparent animate-spin mx-auto mb-4" />
+            <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">Pipeline Execution in Progress</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Generating code components... Current Stage: <span className="font-bold text-brand-500 uppercase">{project.status}</span>
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mt-6">
+            {/* File List / Tabs */}
+            <div className="lg:col-span-1 glass-panel p-5 rounded-xl shadow-premium space-y-4">
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center">
+                <FileCode size={14} className="mr-1.5 text-brand-500" />
+                Generated Components
+              </h3>
             
             <div className="space-y-1.5">
               {files.map((file) => (
@@ -565,6 +644,7 @@ export const CodeGeneratorPage: React.FC = () => {
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 };
