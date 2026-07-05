@@ -1,39 +1,45 @@
 import asyncio
+import os
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
 from backend.core.config import settings
 from backend.core.middleware import CorrelationIDMiddleware
-from backend.routers import auth, health, project, setting, admin, dashboard
-from backend.websocket import routes as ws_routes
-from backend.websocket.manager import redis_pubsub_listener
+
 from backend.db.base import Base
 from backend.db.session import engine
-from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-import os
 
-app = FastAPI(
-    title=settings.PROJECT_NAME,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json",
-    lifespan=lifespan
-)
-# Import all models to ensure they register on the Base class metadata
 from backend.models.user import User
 from backend.models.project import Project
 from backend.models.pipeline import PipelineRun
 from backend.models.setting import Setting
 from backend.models.ai_usage import AIUsageLog
 
+from backend.routers import (
+    auth,
+    health,
+    project,
+    setting,
+    admin,
+    dashboard,
+)
+
+from backend.websocket import routes as ws_routes
+from backend.websocket.manager import redis_pubsub_listener
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Auto-create SQLite database tables on startup (excellent for local and test runs)
+    # Create database tables
     Base.metadata.create_all(bind=engine)
-    
-    # Spawn the Redis pub/sub WebSocket listener task
+
+    # Start Redis listener
     listener_task = asyncio.create_task(redis_pubsub_listener())
-    
+
     try:
         yield
     finally:
@@ -43,13 +49,15 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
+
+# Create FastAPI app
 app = FastAPI(
     title=settings.PROJECT_NAME,
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
-# CORS configuration
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -58,10 +66,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Correlation ID request tracing middleware
+# Middleware
 app.add_middleware(CorrelationIDMiddleware)
 
-# Register routes
+# API Routers
 app.include_router(health.router, prefix=settings.API_V1_STR)
 app.include_router(auth.router, prefix=settings.API_V1_STR)
 app.include_router(project.router, prefix=settings.API_V1_STR)
@@ -70,3 +78,31 @@ app.include_router(admin.router, prefix=settings.API_V1_STR)
 app.include_router(dashboard.router, prefix=settings.API_V1_STR)
 app.include_router(ws_routes.router)
 
+# ======================================================
+# Serve React Frontend
+# ======================================================
+
+frontend_path = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+)
+
+assets_path = os.path.join(frontend_path, "assets")
+
+if os.path.exists(assets_path):
+    app.mount(
+        "/assets",
+        StaticFiles(directory=assets_path),
+        name="assets",
+    )
+
+
+@app.get("/{full_path:path}")
+async def serve_frontend(full_path: str):
+    index_file = os.path.join(frontend_path, "index.html")
+
+    if os.path.exists(index_file):
+        return FileResponse(index_file)
+
+    return {
+        "message": "Frontend build not found. Please run npm run build."
+    }
